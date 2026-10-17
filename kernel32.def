@@ -42,6 +42,8 @@ EXPORTS
     DisableThreadLibraryCalls
     InitOnceExecuteOnce
     GetSystemDirectoryW
+    GetTempPathW
+    CopyFileW
     RaiseException
     AcquireSRWLockShared
     ReleaseSRWLockShared

@@ -6,6 +6,27 @@ static INIT_ONCE initialized = INIT_ONCE_STATIC_INIT;
 static HMODULE system_winmm;
 static FARPROC exports[ARRAY_COUNT(winmm_names)];
 static wchar_t directory[PATH_CAPACITY], path[PATH_CAPACITY];
+static wchar_t temp_path[1024];
+
+/* Copies the system library to a private unique name and returns it in
+   temp_path. Explicit system paths are unreliable once this proxy owns the
+   plain name: on Windows the load can alias this module, and Wine resolves
+   it to nothing distinct. A copy under another name always maps the real
+   system library. The copy is reused across runs; at ~1 MB it is negligible
+   next to the shader and pipeline caches. */
+static int temp_system_copy(void) {
+    wchar_t temp_directory[1024];
+    DWORD count = GetTempPathW(ARRAY_COUNT(temp_directory), temp_directory);
+    if (!count || count >= ARRAY_COUNT(temp_directory) ||
+        !path_join(temp_path, temp_directory, L"fh2_winmm_sys.dll")) {
+        return 0;
+    }
+    if (!CopyFileW(path, temp_path, FALSE) &&
+        GetFileAttributesW(temp_path) == INVALID_FILE_ATTRIBUTES) {
+        return 0;
+    }
+    return 1;
+}
 
 static BOOL CALLBACK load_system_winmm(PINIT_ONCE once, PVOID parameter, PVOID *context) {
     (void)once;
@@ -20,6 +41,9 @@ static BOOL CALLBACK load_system_winmm(PINIT_ONCE once, PVOID parameter, PVOID *
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                        (LPCWSTR)(uintptr_t)load_system_winmm, &self);
+    if ((!system_winmm || system_winmm == self) && temp_system_copy()) {
+        system_winmm = LoadLibraryExW(temp_path, NULL, 0);
+    }
     if (!system_winmm || system_winmm == self) {
         return FALSE;
     }
